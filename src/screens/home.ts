@@ -4,7 +4,7 @@ import { SCENARIOS } from '../lib/tutor/scenarios'
 import { esc, fmtMin, on, navigate } from '../lib/ui'
 import { llm } from '../lib/llm/engine'
 import { MODELS } from '../lib/llm/models'
-import { cloudStatus, cloudUsable } from '../lib/cloud'
+import { cloudStatus, cloudUsable, providerLabel } from '../lib/cloud'
 
 export function render(root: HTMLElement) {
   const s = getState()
@@ -22,7 +22,7 @@ export function render(root: HTMLElement) {
     <section class="card">
       <h2>Bienvenue 👋</h2>
       <p>Fluent est un tuteur d'anglais oral qui fonctionne <b>entièrement sur votre appareil</b> : aucune donnée envoyée, aucun abonnement.</p>
-      <p class="muted small"><b>Conseil :</b> ajoutez une clé Groq gratuite dans les Réglages pour un tuteur bien plus performant. Sans clé, l'appli télécharge une IA locale (${esc(model)}) qui fonctionne ensuite hors-ligne.</p>
+      <p class="muted small"><b>Conseil :</b> ajoutez une clé Groq ou Gemini gratuite dans les Réglages pour un tuteur bien plus performant. Sans clé, l'appli télécharge une IA locale (${esc(model)}) qui fonctionne ensuite hors-ligne.</p>
       <div class="row end"><a class="btn" href="#/settings">Réglages IA</a><button class="btn primary" data-go="talk/free">Commencer</button></div>
     </section>` : ''}
     <section class="card hero">
@@ -30,7 +30,7 @@ export function render(root: HTMLElement) {
       <div>
         <h1>${hello}!</h1>
         <p class="muted">${pct >= 100 ? 'Objectif du jour atteint. Bravo !' : `Temps de parole aujourd'hui : ${fmtMin(d.speakingSec)} sur ${s.settings.dailyGoalMin} min.`}</p>
-        <p class="small muted">🔥 ${streak()} jour${streak() > 1 ? 's' : ''} d'affilée · IA : ${cloudUsable() ? 'Groq (en ligne)' : llm.localReady() ? 'locale, prête' : esc(cloudStatus())}</p>
+        <p class="small muted">🔥 ${streak()} jour${streak() > 1 ? 's' : ''} d'affilée · IA : ${cloudUsable() ? esc(providerLabel()) : llm.localReady() ? 'locale, prête' : esc(cloudStatus())}</p>
       </div>
     </section>
 

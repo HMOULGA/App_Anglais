@@ -5,7 +5,7 @@ import { listVoices, speak } from '../lib/speech/tts'
 import { setLocalModelFile, ensureLLM } from '../lib/ai'
 import { isAndroid, multiThread } from '../lib/platform'
 import { esc, on, toast } from '../lib/ui'
-import { GROQ_MODELS, cloudStatus, testCloud, resetCloudPause } from '../lib/cloud'
+import { GROQ_MODELS, GEMINI_MODELS, cloudStatus, testCloud, resetCloudPause } from '../lib/cloud'
 
 export function render(root: HTMLElement) {
   let cached: string[] = []
@@ -18,13 +18,25 @@ export function render(root: HTMLElement) {
       <h1>Réglages</h1>
 
       <section class="card">
-        <h2>IA en ligne — Groq (recommandé)</h2>
-        <p class="small muted">Tuteur bien plus intelligent (modèles de 70 à 120 milliards de paramètres) et reconnaissance vocale Whisper large-v3, gratuitement dans la limite du quota quotidien. Vos phrases sont alors envoyées à Groq. Sans réseau ou quota épuisé, l'appli repasse automatiquement sur l'IA locale.</p>
+        <h2>IA en ligne (recommandé)</h2>
+        <p class="small muted">Tuteur bien plus intelligent qu'une IA locale, gratuit dans la limite du quota quotidien. Vos phrases sont alors envoyées au fournisseur choisi. Sans réseau ou quota épuisé, l'appli repasse automatiquement sur l'IA locale.</p>
+        <div class="field"><label>Fournisseur</label>
+          <select data-k="cloudProvider">
+            <option value="gemini" ${st.cloudProvider === 'gemini' ? 'selected' : ''}>Google Gemini (clé avec un compte Google)</option>
+            <option value="groq" ${st.cloudProvider === 'groq' ? 'selected' : ''}>Groq (conversation + reconnaissance vocale)</option>
+          </select></div>
+        ${st.cloudProvider === 'gemini' ? `
+        <div class="field"><label>Clé API Gemini</label>
+          <input type="password" class="cloud-key" data-provider="gemini" placeholder="AIza…" value="${esc(st.geminiKey)}" autocomplete="off" style="padding:.6rem;border-radius:10px;border:1px solid var(--line);background:var(--card)" />
+          <span class="small muted">Gratuite : ouvrez <b>aistudio.google.com</b>, connectez-vous avec un compte Google, puis <b>Get API key › Create API key</b>. Collez-la ici. Elle reste sur cet appareil. Au niveau gratuit, Google peut utiliser vos échanges pour améliorer ses produits.</span></div>
+        <div class="field"><label>Modèle</label>
+          <select data-k="geminiModel">${GEMINI_MODELS.map((m) => `<option value="${m.id}" ${st.geminiModel === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></div>
+        <p class="small muted">La reconnaissance vocale reste sur l'appareil avec Gemini (moteur Android ou Whisper local).</p>` : `
         <div class="field"><label>Clé API Groq</label>
-          <input type="password" class="groq-key" placeholder="gsk_…" value="${esc(st.groqKey)}" autocomplete="off" style="padding:.6rem;border-radius:10px;border:1px solid var(--line);background:var(--card)" />
-          <span class="small muted">Gratuite, sans carte bancaire : créez un compte sur <b>console.groq.com</b> › API Keys › Create API Key, puis collez-la ici. Elle reste sur cet appareil.</span></div>
-        <div class="field"><label>Modèle en ligne</label>
-          <select data-k="groqModel">${GROQ_MODELS.map((m) => `<option value="${m.id}" ${st.groqModel === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></div>
+          <input type="password" class="cloud-key" data-provider="groq" placeholder="gsk_…" value="${esc(st.groqKey)}" autocomplete="off" style="padding:.6rem;border-radius:10px;border:1px solid var(--line);background:var(--card)" />
+          <span class="small muted">Gratuite : <b>console.groq.com</b> › API Keys › Create API Key. Elle reste sur cet appareil.</span></div>
+        <div class="field"><label>Modèle</label>
+          <select data-k="groqModel">${GROQ_MODELS.map((m) => `<option value="${m.id}" ${st.groqModel === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></div>`}
         <label class="switch"><span>Mode privé (hors-ligne)<br><span class="small muted">N'utilise que l'IA locale ; rien n'est envoyé en ligne.</span></span><input type="checkbox" data-k="privateMode" ${st.privateMode ? 'checked' : ''} /></label>
         <div class="row between" style="margin-top:8px"><span class="small muted cloud-status">État : ${esc(cloudStatus())}</span>
           <button class="btn small" data-a="testcloud">Tester la clé</button></div>
@@ -56,7 +68,7 @@ export function render(root: HTMLElement) {
         <h2>Voix et écoute</h2>
         <div class="field"><label>Reconnaissance vocale</label>
           <select data-k="sttEngine">
-            <option value="cloud" ${st.sttEngine === 'cloud' ? 'selected' : ''}>Groq Whisper large-v3 (en ligne, le plus précis)</option>
+            <option value="cloud" ${st.sttEngine === 'cloud' ? 'selected' : ''}>Groq Whisper large-v3 (en ligne, le plus précis ; Groq uniquement)</option>
             ${isAndroid ? `<option value="native" ${st.sttEngine === 'native' ? 'selected' : ''}>Android (rapide ; installez le pack anglais hors-ligne)</option>` : ''}
             <option value="whisper" ${st.sttEngine === 'whisper' ? 'selected' : ''}>Whisper local (100 % hors-ligne, plus lent)</option>
           </select></div>
@@ -117,11 +129,8 @@ export function render(root: HTMLElement) {
   })
   root.addEventListener('change', async (e) => {
     const t = e.target as HTMLInputElement
-    if (t.classList.contains('groq-key')) {
-      const first = !getState().settings.groqKey && t.value.trim()
-      set('groqKey', t.value.trim())
-      if (first) set('sttEngine', 'cloud') // première clé : on active aussi la transcription en ligne
-      resetCloudPause()
+    if (t.classList.contains('cloud-key')) {
+      saveKey(t)
       paint()
       return
     }
@@ -139,10 +148,22 @@ export function render(root: HTMLElement) {
     if (!k) return
     const v = t.type === 'checkbox' ? t.checked : t.type === 'range' || t.type === 'number' ? Number(t.value) : t.value
     set(k, v as never)
-    if (k === 'privateMode' || k === 'groqModel') { resetCloudPause(); paint() }
+    if (k === 'privateMode' || k === 'groqModel' || k === 'geminiModel' || k === 'cloudProvider') { resetCloudPause(); paint() }
   })
+  function saveKey(t: HTMLInputElement) {
+    const v = t.value.trim()
+    if (t.dataset.provider === 'gemini') set('geminiKey', v)
+    else {
+      const first = !getState().settings.groqKey && v
+      set('groqKey', v)
+      if (first) set('sttEngine', 'cloud') // première clé Groq : on active aussi la transcription en ligne
+    }
+    resetCloudPause()
+  }
+
   root.addEventListener('input', (e) => {
     const t = e.target as HTMLInputElement
+    if (t.classList.contains('cloud-key')) { saveKey(t); return }
     if (t.dataset.k === 'ttsRate') root.querySelector('.rate-v')!.textContent = Number(t.value).toFixed(2)
   })
   on(root, 'click', '[data-a]', async (el) => {
@@ -150,6 +171,10 @@ export function render(root: HTMLElement) {
     const st = getState().settings
     if (a === 'testcloud') {
       const out = root.querySelector<HTMLElement>('.cloud-status')!
+      const field = root.querySelector<HTMLInputElement>('.cloud-key')
+      if (field) saveKey(field)
+      if (!field?.value.trim()) { out.textContent = '✗ Collez d’abord votre clé dans le champ ci-dessus.'; return }
+      if (getState().settings.privateMode) { out.textContent = '✗ Désactivez le mode privé pour tester la clé.'; return }
       out.textContent = 'Test en cours…'
       try { out.textContent = `✓ Groq répond : ${await testCloud()}` } catch (e) { out.textContent = `✗ ${(e as Error).message}` }
       return

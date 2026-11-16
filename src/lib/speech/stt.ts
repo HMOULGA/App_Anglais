@@ -3,7 +3,7 @@ import { SpeechRecognition } from '@capacitor-community/speech-recognition'
 import { isAndroid, isMock } from '../platform'
 import { record } from './recorder'
 import { getState, type SttEngine } from '../store'
-import { cloudUsable, cloudTranscribe } from '../cloud'
+import { cloudSttUsable, cloudTranscribe } from '../cloud'
 
 export interface SttResult { text: string; speechSec: number }
 
@@ -138,7 +138,7 @@ async function listenCloud(o: ListenOptions): Promise<ListenHandle> {
 }
 
 export function listen(o: ListenOptions): Promise<ListenHandle> {
-  if (o.engine === 'cloud' && cloudUsable()) return listenCloud(o)
+  if (o.engine === 'cloud' && cloudSttUsable()) return listenCloud(o)
   if ((o.engine === 'native' || o.engine === 'cloud') && isAndroid) return listenNative(o)
   return listenWhisper(o)
 }

@@ -5,7 +5,7 @@ import { loadWhisper, whisperIsLoaded } from './speech/stt'
 import { getState } from './store'
 import { esc, modal } from './ui'
 import { isAndroid } from './platform'
-import { cloudUsable } from './cloud'
+import { cloudUsable, cloudSttUsable } from './cloud'
 
 let localFile: File | null = null
 export function setLocalModelFile(f: File | null) { localFile = f }
@@ -52,7 +52,7 @@ export async function ensureLLM(forceLocal = false): Promise<boolean> {
 export async function ensureWhisper(): Promise<boolean> {
   const s = getState().settings
   if (s.sttEngine === 'native' && isAndroid) return true
-  if (s.sttEngine === 'cloud' && (cloudUsable() || isAndroid)) return true // Android : repli sur la reconnaissance native
+  if (s.sttEngine === 'cloud' && (cloudSttUsable() || isAndroid)) return true // Android : repli sur la reconnaissance native
   if (whisperIsLoaded(s.whisperModel)) return true
   const ui = progressModal('Préparation de la reconnaissance vocale')
   try {

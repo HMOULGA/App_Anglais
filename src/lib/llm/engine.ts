@@ -1,7 +1,6 @@
 // Moteur de langage local. Implémentation réelle : wllama (llama.cpp en WebAssembly, dans un worker).
 import { isMock } from '../platform'
-import { cloudChat, cloudUsable, CloudError } from '../cloud'
-import { getState } from '../store'
+import { cloudChat, cloudUsable, providerLabel, CloudError } from '../cloud'
 
 export interface ChatMsg { role: 'system' | 'user' | 'assistant'; content: string }
 
@@ -176,7 +175,7 @@ class HybridLLM implements LLM {
   usingCloud() { return cloudUsable() }
   load(src: string | File, onProgress: (p: number, phase: string) => void, opts?: { gpu: boolean }) { return this.local.load(src, onProgress, opts) }
   unload() { return this.local.unload() }
-  describe() { return cloudUsable() ? `Groq · ${getState().settings.groqModel}` : this.local.describe() }
+  describe() { return cloudUsable() ? providerLabel() : this.local.describe() }
   async chat(messages: ChatMsg[], opts: ChatOptions = {}) {
     if (cloudUsable()) {
       try { return await cloudChat(messages, opts) } catch (e) {

@@ -18,6 +18,9 @@ export interface Settings {
   dailyGoalMin: number
   correctionMode: 'every' | 'end' // corrections à chaque tour ou en fin de séance
   gpu: boolean // accélération WebGPU (rapide mais instable sur certains téléphones)
+  cloudProvider: 'groq' | 'gemini'
+  geminiKey: string
+  geminiModel: string
   groqKey: string // clé API Groq (stockée uniquement sur l'appareil)
   groqModel: string
   privateMode: boolean // force l'IA locale (rien n'est envoyé en ligne)
@@ -71,6 +74,9 @@ export function defaultSettings(isAndroid: boolean): Settings {
     dailyGoalMin: 20,
     correctionMode: 'every',
     gpu: false,
+    cloudProvider: 'gemini',
+    geminiKey: '',
+    geminiModel: 'gemini-2.5-flash',
     groqKey: '',
     groqModel: 'llama-3.3-70b-versatile',
     privateMode: false,

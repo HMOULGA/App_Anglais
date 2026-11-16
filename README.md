@@ -16,9 +16,11 @@ L'IA tourne **entièrement sur l'appareil** : aucun compte, aucun abonnement, au
 
 La séance du jour sur l'accueil suit la méthode : révisions → 10–15 min de conversation → 5 min de shadowing.
 
-## IA en ligne (Groq, recommandé)
+## IA en ligne (Gemini ou Groq, recommandé)
 
-Collez une clé API Groq gratuite (console.groq.com › API Keys) dans **Réglages**. Le tuteur passe alors par Llama 3.3 70B (ou GPT-OSS 120B, Qwen 3 32B…) et l'écoute par Whisper large-v3 turbo : corrections bien plus fiables, réponses quasi instantanées. Sans réseau, quota épuisé ou clé refusée, l'appli repasse automatiquement sur l'IA locale ci-dessous. L'option **Mode privé** force l'IA locale.
+**Gemini** : clé gratuite sur aistudio.google.com (Get API key) avec un compte Google ; modèle par défaut Gemini 2.5 Flash, sans « réflexion » pour répondre vite. La reconnaissance vocale reste alors locale.
+
+**Groq** : collez une clé API Groq gratuite (console.groq.com › API Keys) dans **Réglages**. Le tuteur passe alors par Llama 3.3 70B (ou GPT-OSS 120B, Qwen 3 32B…) et l'écoute par Whisper large-v3 turbo : corrections bien plus fiables, réponses quasi instantanées. Sans réseau, quota épuisé ou clé refusée, l'appli repasse automatiquement sur l'IA locale ci-dessous. L'option **Mode privé** force l'IA locale.
 
 ## Les moteurs d'IA locaux (secours / hors-ligne)
 

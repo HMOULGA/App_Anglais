@@ -19,7 +19,7 @@ describe('Groq', () => {
   beforeEach(() => {
     localStorage.clear()
     initStore(false)
-    update((s) => { s.settings.groqKey = 'gsk_test_key_123456' })
+    update((s) => { s.settings.cloudProvider = 'groq'; s.settings.groqKey = 'gsk_test_key_123456' })
     resetCloudPause()
   })
   afterEach(() => vi.unstubAllGlobals())
@@ -73,5 +73,35 @@ describe('Groq', () => {
     expect(w.getUint32(24, true)).toBe(16000)
     expect(w.getInt16(46, true)).toBe(32767)
     expect(w.getInt16(48, true)).toBe(-32768)
+  })
+
+  it('Gemini : système séparé, rôle model, sans réflexion, en streaming', async () => {
+    update((s) => { s.settings.cloudProvider = 'gemini'; s.settings.geminiKey = 'AIza_test_key_123456' })
+    const enc = new TextEncoder()
+    const chunk = (t: string) => `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: t }] } }] })}\n\n`
+    const body = new ReadableStream({ start(c) { c.enqueue(enc.encode(chunk('Great') + chunk(' answer!'))); c.close() } })
+    const fetchMock = vi.fn().mockResolvedValue(new Response(body))
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await cloudChat([
+      { role: 'system', content: 'Be nice' },
+      { role: 'user', content: 'Hi' },
+      { role: 'assistant', content: 'Hello' },
+      { role: 'user', content: 'How are you' },
+    ], { onToken: () => {} })
+    expect(out).toBe('Great answer!')
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse')
+    expect(init.headers['x-goog-api-key']).toBe('AIza_test_key_123456')
+    const b = JSON.parse(init.body)
+    expect(b.systemInstruction.parts[0].text).toBe('Be nice')
+    expect(b.contents.map((c: any) => c.role)).toEqual(['user', 'model', 'user'])
+    expect(b.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 })
+  })
+
+  it('Gemini : clé invalide (400) → pause et message clair', async () => {
+    update((s) => { s.settings.cloudProvider = 'gemini'; s.settings.geminiKey = 'AIza_bad_key_123456' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"error":{"message":"API key not valid. Please pass a valid API key."}}', { status: 400 })))
+    await expect(cloudChat([{ role: 'user', content: 'x' }])).rejects.toThrow('Clé Gemini invalide')
+    expect(cloudStatus()).toContain('clé refusée')
   })
 })

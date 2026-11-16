@@ -1,4 +1,4 @@
-// IA en ligne via Groq (API compatible OpenAI, quota gratuit) : conversation + Whisper large-v3.
+// IA en ligne : Groq (API compatible OpenAI, conversation + Whisper large-v3) ou Google Gemini (conversation).
 import type { ChatMsg, ChatOptions } from './llm/engine'
 import { getState } from './store'
 import { isMock } from './platform'
@@ -12,6 +12,12 @@ export const GROQ_MODELS = [
   { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B — ultra-rapide, quota large' },
 ]
 
+export const GEMINI_MODELS = [
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — recommandé' },
+  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite — plus rapide, quota plus large' },
+  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (préversion)' },
+]
+
 export class CloudError extends Error {
   constructor(message: string, readonly status: number) { super(message); this.name = 'CloudError' }
 }
@@ -20,9 +26,23 @@ export class CloudError extends Error {
 let pausedUntil = 0
 let pauseReason = ''
 
-export function cloudConfigured(): boolean {
+function activeKey(): string {
   const s = getState().settings
-  return !isMock && !s.privateMode && s.groqKey.trim().length > 10
+  return (s.cloudProvider === 'gemini' ? s.geminiKey : s.groqKey).trim()
+}
+
+export function cloudConfigured(): boolean {
+  return !isMock && !getState().settings.privateMode && activeKey().length > 10
+}
+
+export function providerLabel(): string {
+  const s = getState().settings
+  return s.cloudProvider === 'gemini' ? `Gemini · ${s.geminiModel}` : `Groq · ${s.groqModel}`
+}
+
+/** La transcription en ligne n'existe que chez Groq (Whisper large-v3). */
+export function cloudSttUsable(): boolean {
+  return cloudUsable() && getState().settings.cloudProvider === 'groq'
 }
 
 /** Le cloud est-il utilisable maintenant ? (clé, pas en mode privé, réseau, pas de quota épuisé) */
@@ -34,7 +54,7 @@ export function cloudStatus(): string {
   if (!cloudConfigured()) return getState().settings.privateMode ? 'mode privé : IA locale uniquement' : 'aucune clé : IA locale'
   if (navigator.onLine === false) return 'hors-ligne : IA locale'
   if (Date.now() <= pausedUntil) return `en pause (${pauseReason}) : IA locale`
-  return 'Groq actif'
+  return `${providerLabel()} actif`
 }
 
 function pause(status: number) {
@@ -46,34 +66,102 @@ function pause(status: number) {
 
 export function resetCloudPause() { pausedUntil = 0 }
 
-async function errorFrom(res: Response): Promise<CloudError> {
-  let msg = `Groq HTTP ${res.status}`
+async function errorFrom(res: Response, name: string): Promise<CloudError> {
+  let msg = `${name} HTTP ${res.status}`
+  let status = res.status
   try { msg = (await res.json())?.error?.message ?? msg } catch { /* corps vide */ }
-  if (res.status === 401) msg = 'Clé Groq invalide'
-  if (res.status === 429) msg = 'Quota Groq atteint (réessayez plus tard)'
-  return new CloudError(msg, res.status)
+  // Gemini renvoie 400 « API key not valid » pour une mauvaise clé
+  if (status === 400 && /api key/i.test(msg)) status = 401
+  if (status === 401 || status === 403) msg = `Clé ${name} invalide ou non autorisée`
+  if (status === 429) msg = `Quota ${name} atteint (réessayez plus tard)`
+  return new CloudError(msg, status)
 }
 
-async function call(path: string, init: RequestInit): Promise<Response> {
-  const key = getState().settings.groqKey.trim()
+async function request(url: string, init: RequestInit, name: string): Promise<Response> {
   let res: Response
   try {
-    res = await fetch(BASE + path, { ...init, headers: { Authorization: `Bearer ${key}`, ...(init.headers ?? {}) } })
+    res = await fetch(url, init)
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
     pause(0)
-    throw new CloudError('Groq injoignable (réseau)', 0)
+    throw new CloudError(`${name} injoignable (réseau)`, 0)
   }
   if (!res.ok) {
-    const err = await errorFrom(res)
-    if (res.status === 429 || res.status === 401 || res.status === 403 || res.status >= 500) pause(res.status)
+    const err = await errorFrom(res, name)
+    if (err.status === 429 || err.status === 401 || err.status === 403 || err.status >= 500) pause(err.status)
     throw err
   }
   return res
 }
 
+function call(path: string, init: RequestInit): Promise<Response> {
+  const key = getState().settings.groqKey.trim()
+  return request(BASE + path, { ...init, headers: { Authorization: `Bearer ${key}`, ...(init.headers ?? {}) } }, 'Groq')
+}
+
+/** Lit un flux SSE et appelle onData pour chaque objet JSON reçu. */
+async function readSse(res: Response, onData: (d: any) => void) {
+  const reader = res.body!.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    const lines = buf.split('\n')
+    buf = lines.pop() ?? ''
+    for (const line of lines) {
+      const l = line.trim()
+      if (!l.startsWith('data:')) continue
+      const data = l.slice(5).trim()
+      if (data === '[DONE]') continue
+      try { onData(JSON.parse(data)) } catch { /* ligne partielle */ }
+    }
+  }
+}
+
+// ---------- Gemini (API native : compatible navigateur) ----------
+const GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models/'
+
+async function geminiChat(messages: ChatMsg[], opts: ChatOptions): Promise<string> {
+  const s = getState().settings
+  const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n')
+  const contents = messages.filter((m) => m.role !== 'system').map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }))
+  const generationConfig: Record<string, unknown> = {
+    temperature: opts.temperature ?? 0.7,
+    maxOutputTokens: Math.max(opts.maxTokens ?? 200, opts.jsonSchema ? 600 : 300),
+  }
+  // réponse immédiate : pas de « réflexion » (2.5 → thinkingBudget, 3.x → thinkingLevel)
+  if (/2\.5/.test(s.geminiModel)) generationConfig.thinkingConfig = { thinkingBudget: 0 }
+  else if (/gemini-3/.test(s.geminiModel)) generationConfig.thinkingConfig = { thinkingLevel: 'LOW' }
+  if (opts.jsonSchema) generationConfig.responseMimeType = 'application/json'
+  const body = JSON.stringify({
+    ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+    contents,
+    generationConfig,
+  })
+  const stream = !!opts.onToken
+  const url = `${GEMINI}${encodeURIComponent(s.geminiModel)}:${stream ? 'streamGenerateContent?alt=sse' : 'generateContent'}`
+  const res = await request(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': s.geminiKey.trim() },
+    body,
+    signal: opts.signal,
+  }, 'Gemini')
+  const textOf = (d: any) => (d.candidates?.[0]?.content?.parts ?? [])
+    .filter((p: any) => !p.thought && typeof p.text === 'string').map((p: any) => p.text).join('')
+  if (!stream) return textOf(await res.json()).trim()
+  let text = ''
+  await readSse(res, (d) => { const t = textOf(d); if (t) { text += t; opts.onToken!(text) } })
+  return text.trim()
+}
+
 export async function cloudChat(messages: ChatMsg[], opts: ChatOptions = {}): Promise<string> {
   const s = getState().settings
+  if (s.cloudProvider === 'gemini') return geminiChat(messages, opts)
   const body: Record<string, unknown> = {
     model: s.groqModel,
     messages,
@@ -94,28 +182,8 @@ export async function cloudChat(messages: ChatMsg[], opts: ChatOptions = {}): Pr
     const j = await res.json()
     return (j.choices?.[0]?.message?.content ?? '').trim()
   }
-  // flux SSE : lignes « data: {...} »
-  const reader = res.body!.getReader()
-  const dec = new TextDecoder()
-  let buf = ''
   let text = ''
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += dec.decode(value, { stream: true })
-    const lines = buf.split('\n')
-    buf = lines.pop() ?? ''
-    for (const line of lines) {
-      const l = line.trim()
-      if (!l.startsWith('data:')) continue
-      const data = l.slice(5).trim()
-      if (data === '[DONE]') continue
-      try {
-        const d = JSON.parse(data).choices?.[0]?.delta?.content
-        if (d) { text += d; opts.onToken(text) }
-      } catch { /* ligne partielle */ }
-    }
-  }
+  await readSse(res, (j) => { const d = j.choices?.[0]?.delta?.content; if (d) { text += d; opts.onToken!(text) } })
   return text.trim()
 }
 
