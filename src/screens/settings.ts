@@ -30,7 +30,10 @@ export function render(root: HTMLElement) {
           <input type="password" class="cloud-key" data-provider="gemini" placeholder="AIza…" value="${esc(st.geminiKey)}" autocomplete="off" style="padding:.6rem;border-radius:10px;border:1px solid var(--line);background:var(--card)" />
           <span class="small muted">Gratuite : ouvrez <b>aistudio.google.com</b>, connectez-vous avec un compte Google, puis <b>Get API key › Create API key</b>. Collez-la ici. Elle reste sur cet appareil. Au niveau gratuit, Google peut utiliser vos échanges pour améliorer ses produits.</span></div>
         <div class="field"><label>Modèle</label>
-          <select data-k="geminiModel">${GEMINI_MODELS.map((m) => `<option value="${m.id}" ${st.geminiModel === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></div>
+          <select data-k="geminiModel">${GEMINI_MODELS.map((m) => `<option value="${m.id}" ${st.geminiModel === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}
+            ${GEMINI_MODELS.some((m) => m.id === st.geminiModel) ? '' : `<option value="${esc(st.geminiModel)}" selected>${esc(st.geminiModel)}</option>`}</select>
+          <input type="text" class="gemini-model-id" placeholder="ou identifiant exact, ex. gemini-3.8-flash" style="padding:.5rem;border-radius:8px;border:1px solid var(--line);background:var(--card)" />
+          <span class="small muted">Si Google retire le modèle choisi, l'appli passe d'elle-même au remplaçant qu'il indique.</span></div>
         <p class="small muted">La reconnaissance vocale reste sur l'appareil avec Gemini (moteur Android ou Whisper local).</p>` : `
         <div class="field"><label>Clé API Groq</label>
           <input type="password" class="cloud-key" data-provider="groq" placeholder="gsk_…" value="${esc(st.groqKey)}" autocomplete="off" style="padding:.6rem;border-radius:10px;border:1px solid var(--line);background:var(--card)" />
@@ -129,6 +132,12 @@ export function render(root: HTMLElement) {
   })
   root.addEventListener('change', async (e) => {
     const t = e.target as HTMLInputElement
+    if (t.classList.contains('gemini-model-id') && t.value.trim()) {
+      set('geminiModel', t.value.trim().replace(/^models\//, ''))
+      resetCloudPause()
+      paint()
+      return
+    }
     if (t.classList.contains('cloud-key')) {
       saveKey(t)
       paint()

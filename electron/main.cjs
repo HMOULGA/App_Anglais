@@ -1,6 +1,6 @@
 // Application Windows (Electron). Sert l'appli via un protocole app:// sécurisé avec les en-têtes
 // COOP/COEP nécessaires au multi-thread de llama.cpp, et autorise le micro.
-const { app, BrowserWindow, protocol, net, session, shell } = require('electron')
+const { app, BrowserWindow, protocol, net, session, shell, Menu } = require('electron')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 
@@ -23,6 +23,13 @@ function createWindow() {
     webPreferences: { contextIsolation: true, sandbox: true },
   })
   win.loadURL('app://fluent/index.html')
+  // menu clic droit : couper / copier / coller (absent par défaut dans Electron)
+  win.webContents.on('context-menu', (_e, p) => {
+    const items = p.isEditable
+      ? [{ role: 'cut', label: 'Couper' }, { role: 'copy', label: 'Copier' }, { role: 'paste', label: 'Coller' }, { type: 'separator' }, { role: 'selectAll', label: 'Tout sélectionner' }]
+      : p.selectionText ? [{ role: 'copy', label: 'Copier' }] : []
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win })
+  })
   // liens externes → navigateur
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
 }

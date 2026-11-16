@@ -76,7 +76,7 @@ export function defaultSettings(isAndroid: boolean): Settings {
     gpu: false,
     cloudProvider: 'gemini',
     geminiKey: '',
-    geminiModel: 'gemini-2.5-flash',
+    geminiModel: 'gemini-3.8-flash',
     groqKey: '',
     groqModel: 'llama-3.3-70b-versatile',
     privateMode: false,
@@ -96,6 +96,7 @@ export function initStore(isAndroid: boolean): AppState {
     if (raw) {
       const s = JSON.parse(raw) as AppState
       state = { ...fresh(isAndroid), ...s, settings: { ...defaultSettings(isAndroid), ...s.settings } }
+      if (/^gemini-2\.5|^gemini-3-flash-preview$/.test(state.settings.geminiModel)) state.settings.geminiModel = 'gemini-3.8-flash'
       return state
     }
   } catch { /* état corrompu : on repart de zéro */ }

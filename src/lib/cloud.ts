@@ -1,6 +1,6 @@
 // IA en ligne : Groq (API compatible OpenAI, conversation + Whisper large-v3) ou Google Gemini (conversation).
 import type { ChatMsg, ChatOptions } from './llm/engine'
-import { getState } from './store'
+import { getState, update } from './store'
 import { isMock } from './platform'
 
 const BASE = 'https://api.groq.com/openai/v1'
@@ -13,9 +13,9 @@ export const GROQ_MODELS = [
 ]
 
 export const GEMINI_MODELS = [
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — recommandé' },
-  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite — plus rapide, quota plus large' },
-  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (préversion)' },
+  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash — recommandé' },
+  { id: 'gemini-flash-latest', label: 'Gemini Flash (toujours la dernière version)' },
+  { id: 'gemini-flash-lite-latest', label: 'Gemini Flash-Lite (dernière version, quota plus large)' },
 ]
 
 export class CloudError extends Error {
@@ -123,7 +123,25 @@ async function readSse(res: Response, onData: (d: any) => void) {
 // ---------- Gemini (API native : compatible navigateur) ----------
 const GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models/'
 
-async function geminiChat(messages: ChatMsg[], opts: ChatOptions): Promise<string> {
+/** Si Google retire un modèle, son message d'erreur indique le remplaçant (« use models/xxx ») : on l'adopte. */
+export function replacementModel(message: string): string | null {
+  if (!/no longer available|not found|not supported|deprecated|retired/i.test(message)) return null
+  return message.match(/use\s+models\/([\w.-]+)/i)?.[1] ?? 'gemini-flash-latest'
+}
+
+async function geminiChat(messages: ChatMsg[], opts: ChatOptions, retried = false): Promise<string> {
+  try {
+    return await geminiChatOnce(messages, opts)
+  } catch (e) {
+    const next = e instanceof CloudError && !retried ? replacementModel(e.message) : null
+    if (!next || next === getState().settings.geminiModel) throw e
+    console.warn(`Modèle Gemini retiré, passage à ${next}`)
+    update((s) => { s.settings.geminiModel = next })
+    return geminiChat(messages, opts, true)
+  }
+}
+
+async function geminiChatOnce(messages: ChatMsg[], opts: ChatOptions): Promise<string> {
   const s = getState().settings
   const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n')
   const contents = messages.filter((m) => m.role !== 'system').map((m) => ({
@@ -132,9 +150,10 @@ async function geminiChat(messages: ChatMsg[], opts: ChatOptions): Promise<strin
   }))
   const generationConfig: Record<string, unknown> = {
     temperature: opts.temperature ?? 0.7,
-    maxOutputTokens: Math.max(opts.maxTokens ?? 200, opts.jsonSchema ? 600 : 300),
+    // marge large : sur les modèles récents la « réflexion » consomme aussi des jetons de sortie
+    maxOutputTokens: Math.max(opts.maxTokens ?? 200, 2048),
   }
-  // réponse immédiate : pas de « réflexion » (2.5 → thinkingBudget, 3.x → thinkingLevel)
+  // réponse rapide : réflexion minimale (2.5 → thinkingBudget, 3.x → thinkingLevel ; alias « latest » : défaut)
   if (/2\.5/.test(s.geminiModel)) generationConfig.thinkingConfig = { thinkingBudget: 0 }
   else if (/gemini-3/.test(s.geminiModel)) generationConfig.thinkingConfig = { thinkingLevel: 'LOW' }
   if (opts.jsonSchema) generationConfig.responseMimeType = 'application/json'

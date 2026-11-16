@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { initStore, update } from '../src/lib/store'
-import { cloudChat, cloudUsable, cloudStatus, encodeWav, cloudTranscribe, resetCloudPause } from '../src/lib/cloud'
+import { cloudChat, cloudUsable, cloudStatus, encodeWav, cloudTranscribe, resetCloudPause, replacementModel } from '../src/lib/cloud'
+import { getState } from '../src/lib/store'
 import { llm, NeedLocalError } from '../src/lib/llm/engine'
 
 function sse(chunks: string[]): Response {
@@ -90,12 +91,26 @@ describe('Groq', () => {
     ], { onToken: () => {} })
     expect(out).toBe('Great answer!')
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse')
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse')
     expect(init.headers['x-goog-api-key']).toBe('AIza_test_key_123456')
     const b = JSON.parse(init.body)
     expect(b.systemInstruction.parts[0].text).toBe('Be nice')
     expect(b.contents.map((c: any) => c.role)).toEqual(['user', 'model', 'user'])
-    expect(b.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 })
+    expect(b.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'LOW' })
+  })
+
+  it('Gemini : modèle retiré → adopte le remplaçant indiqué et réessaie', async () => {
+    update((s) => { s.settings.cloudProvider = 'gemini'; s.settings.geminiKey = 'AIza_test_key_123456'; s.settings.geminiModel = 'gemini-2.5-flash' })
+    const retired = '{"error":{"message":"This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the latest features."}}'
+    const ok = JSON.stringify({ candidates: [{ content: { parts: [{ text: 'ready' }] } }] })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(retired, { status: 404 }))
+      .mockResolvedValueOnce(new Response(ok))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await cloudChat([{ role: 'user', content: 'x' }])).toBe('ready')
+    expect(getState().settings.geminiModel).toBe('gemini-3.8-flash')
+    expect(fetchMock.mock.calls[1][0]).toContain('/models/gemini-3.8-flash:generateContent')
+    expect(replacementModel('quota exceeded')).toBeNull()
   })
 
   it('Gemini : clé invalide (400) → pause et message clair', async () => {
