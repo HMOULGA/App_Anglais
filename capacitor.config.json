@@ -1,0 +1,6 @@
+{
+  "appId": "fr.hmoulga.fluent",
+  "appName": "Fluent",
+  "webDir": "dist",
+  "android": { "allowMixedContent": false }
+}
