@@ -1,8 +1,8 @@
 import { getState, update, exportJson, importJson, type Settings } from '../lib/store'
 import { MODELS, WHISPER_MODELS } from '../lib/llm/models'
 import { llm, cachedModelUrls, removeCachedModel } from '../lib/llm/engine'
-import { listVoices, speak } from '../lib/speech/tts'
-import { setLocalModelFile, ensureLLM } from '../lib/ai'
+import { listVoices, speak, NEURAL_VOICES } from '../lib/speech/tts'
+import { setLocalModelFile, ensureLLM, ensureTts } from '../lib/ai'
 import { isAndroid, multiThread } from '../lib/platform'
 import { esc, on, toast } from '../lib/ui'
 import { GROQ_MODELS, GEMINI_MODELS, cloudStatus, testCloud, resetCloudPause } from '../lib/cloud'
@@ -79,9 +79,16 @@ export function render(root: HTMLElement) {
           <select data-k="whisperModel">${WHISPER_MODELS.map((w) => `<option value="${w.id}" ${st.whisperModel === w.id ? 'selected' : ''}>${esc(w.label)}</option>`).join('')}</select></div>
         <div class="field"><label>Accent</label>
           <select data-k="accent"><option value="en-US" ${st.accent === 'en-US' ? 'selected' : ''}>Américain</option><option value="en-GB" ${st.accent === 'en-GB' ? 'selected' : ''}>Britannique</option></select></div>
-        <div class="field"><label>Voix du tuteur</label>
+        <div class="field"><label>Moteur de voix</label>
+          <select data-k="ttsEngine">
+            <option value="neural" ${st.ttsEngine === 'neural' ? 'selected' : ''}>Voix neuronale Kokoro (naturelle, ~90 Mo, hors-ligne)</option>
+            <option value="system" ${st.ttsEngine === 'system' ? 'selected' : ''}>Voix du système (${isAndroid ? 'Android' : 'Windows'})</option>
+          </select></div>
+        ${st.ttsEngine === 'neural' ? `<div class="field"><label>Voix du tuteur</label>
+          <select data-k="neuralVoice">${NEURAL_VOICES.map((v) => `<option value="${v.id}" ${st.neuralVoice === v.id ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select>
+          <span class="small muted">Téléchargée une fois, puis générée sur l'appareil. ${isAndroid ? 'Sur téléphone, elle peut mettre une ou deux secondes à démarrer.' : ''}</span></div>` : `<div class="field"><label>Voix du tuteur</label>
           <select data-k="voice"><option value="">Par défaut</option>${voices.map((v) => `<option value="${esc(v.name)}" ${st.voice === v.name ? 'selected' : ''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select>
-          ${voices.length ? '' : `<span class="small muted">Aucune voix anglaise trouvée. ${isAndroid ? 'Installez-en une : Paramètres Android › Synthèse vocale.' : 'Windows : Paramètres › Heure et langue › Voix › Ajouter des voix (English).'}</span>`}</div>
+          ${voices.length ? '' : `<span class="small muted">Aucune voix anglaise trouvée. ${isAndroid ? 'Installez-en une : Paramètres Android › Synthèse vocale.' : 'Windows : Paramètres › Heure et langue › Voix › Ajouter des voix (English).'} Ou choisissez la voix neuronale ci-dessus.</span>`}</div>`}
         <div class="field"><label>Vitesse de parole : <span class="rate-v">${st.ttsRate.toFixed(2)}</span>×</label>
           <input type="range" min="0.6" max="1.4" step="0.05" value="${st.ttsRate}" data-k="ttsRate" />
           <button class="btn small" data-a="testvoice" style="align-self:flex-start">🔊 Tester la voix</button></div>
@@ -158,6 +165,7 @@ export function render(root: HTMLElement) {
     const v = t.type === 'checkbox' ? t.checked : t.type === 'range' || t.type === 'number' ? Number(t.value) : t.value
     set(k, v as never)
     if (k === 'privateMode' || k === 'groqModel' || k === 'geminiModel' || k === 'cloudProvider') { resetCloudPause(); paint() }
+    if (k === 'ttsEngine') paint()
   })
   function saveKey(t: HTMLInputElement) {
     const v = t.value.trim()
@@ -189,7 +197,10 @@ export function render(root: HTMLElement) {
       return
     }
     if (a === 'load') { if (await ensureLLM()) { toast('Modèle prêt'); cached = await cachedModelUrls(); void paint() } }
-    else if (a === 'testvoice') void speak("Hi! I'm Emma, your English partner. Let's practise together.", { rate: st.ttsRate, voice: st.voice, lang: st.accent })
+    else if (a === 'testvoice') {
+      if (st.ttsEngine === 'neural' && !(await ensureTts())) return
+      void speak("Hi! I'm Emma, your English partner. Let's practise together.", { rate: st.ttsRate, voice: st.voice, lang: st.accent })
+    }
     else if (a === 'export') {
       const blob = new Blob([exportJson()], { type: 'application/json' })
       const link = document.createElement('a')

@@ -18,6 +18,8 @@ export interface Settings {
   dailyGoalMin: number
   correctionMode: 'every' | 'end' // corrections à chaque tour ou en fin de séance
   gpu: boolean // accélération WebGPU (rapide mais instable sur certains téléphones)
+  ttsEngine: 'neural' | 'system' // voix neuronale Kokoro ou voix du système
+  neuralVoice: string
   cloudProvider: 'groq' | 'gemini'
   geminiKey: string
   geminiModel: string
@@ -74,6 +76,8 @@ export function defaultSettings(isAndroid: boolean): Settings {
     dailyGoalMin: 20,
     correctionMode: 'every',
     gpu: false,
+    ttsEngine: isAndroid ? 'system' : 'neural',
+    neuralVoice: 'af_heart',
     cloudProvider: 'gemini',
     geminiKey: '',
     geminiModel: 'gemini-3.8-flash',

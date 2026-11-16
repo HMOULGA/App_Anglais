@@ -1,7 +1,8 @@
 import './styles.css'
 import { initStore, streak, subscribe } from './lib/store'
 import { isAndroid } from './lib/platform'
-import { stopSpeaking } from './lib/speech/tts'
+import { stopSpeaking, setNoEnglishVoiceHandler } from './lib/speech/tts'
+import { toast } from './lib/ui'
 import * as home from './screens/home'
 import * as talk from './screens/talk'
 import * as shadow from './screens/shadow'
@@ -13,6 +14,7 @@ type Screen = { render(root: HTMLElement, params: string[]): void | (() => void)
 const routes: Record<string, Screen> = { '': home, talk, shadow, review, progress, settings }
 
 initStore(isAndroid)
+setNoEnglishVoiceHandler(() => toast('Aucune voix anglaise installée : choisissez la voix neuronale dans Réglages › Voix.', 8000))
 const app = document.getElementById('app')!
 let cleanup: void | (() => void)
 

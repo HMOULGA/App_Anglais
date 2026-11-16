@@ -6,6 +6,8 @@ import { getState } from './store'
 import { esc, modal } from './ui'
 import { isAndroid } from './platform'
 import { cloudUsable, cloudSttUsable } from './cloud'
+import { loadNeural, neuralLoaded } from './speech/tts'
+import { update } from './store'
 
 let localFile: File | null = null
 export function setLocalModelFile(f: File | null) { localFile = f }
@@ -66,8 +68,24 @@ export async function ensureWhisper(): Promise<boolean> {
   }
 }
 
+/** Prépare la voix neuronale (téléchargée une fois). En cas d'échec, repli sur la voix du système. */
+export async function ensureTts(): Promise<boolean> {
+  if (getState().settings.ttsEngine !== 'neural' || neuralLoaded()) return true
+  const ui = progressModal('Préparation de la voix du tuteur')
+  try {
+    await loadNeural((p) => ui.set(p, 'Téléchargement de la voix neuronale (~90 Mo, une seule fois)'))
+    ui.close()
+    return true
+  } catch (e) {
+    ui.close()
+    update((s) => { s.settings.ttsEngine = 'system' })
+    alertBox('Voix neuronale indisponible', `${esc((e as Error).message)}<br><br>L'appli utilise la voix du système pour l'instant.`)
+    return true
+  }
+}
+
 export async function ensureAll(): Promise<boolean> {
-  return (await ensureLLM()) && (await ensureWhisper())
+  return (await ensureLLM()) && (await ensureWhisper()) && (await ensureTts())
 }
 
 export function alertBox(title: string, html: string) {

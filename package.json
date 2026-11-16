@@ -57,9 +57,15 @@
     "electron": "^45.3.3",
     "electron-builder": "^26.18.0",
     "jsdom": "^31.0.1",
+    "kokoro-js": "^1.2.1",
     "onnxruntime-web": "^1.31.0-dev.20260914-8d85527a0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "kokoro-js": {
+      "@huggingface/transformers": "$@huggingface/transformers"
+    }
   }
 }
