@@ -63,9 +63,19 @@ describe('sorties du modèle', () => {
   it('limite l’historique envoyé au modèle', () => {
     const h = Array.from({ length: 30 }, (_, i) => ({ role: (i % 2 ? 'user' : 'assistant') as 'user' | 'assistant', content: String(i) }))
     const m = tutorMessages(SCENARIOS[0], 'B2', h)
-    expect(m).toHaveLength(13)
     expect(m[0].role).toBe('system')
-    expect(m[12].content).toBe('29')
+    expect(m[m.length - 1].content).toBe('29')
+    // alternance stricte user/assistant, en commençant par user (exigence de Gemma)
+    m.slice(1).forEach((x, i) => expect(x.role).toBe(i % 2 === 0 ? 'user' : 'assistant'))
+  })
+  it('commence par l’utilisateur même si le tuteur a ouvert la conversation', () => {
+    const m = tutorMessages(SCENARIOS[0], 'B2', [
+      { role: 'assistant', content: 'Hi! How was your day?' },
+      { role: 'user', content: 'Good.' },
+      { role: 'user', content: 'Very good.' },
+    ])
+    expect(m.map((x) => x.role)).toEqual(['system', 'user', 'assistant', 'user'])
+    expect(m[3].content).toBe('Good.\nVery good.')
   })
   it('la consigne de correction contient la phrase et le contexte', () => {
     const m = correctionMessages('I go there yesterday', 'Where did you go?', 'B2', true)

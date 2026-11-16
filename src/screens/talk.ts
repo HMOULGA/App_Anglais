@@ -182,6 +182,7 @@ function renderConvo(root: HTMLElement, sc: Scenario) {
     } catch (e) {
       reply = "Sorry, I lost my train of thought. Could you say that again?"
       console.error(e)
+      toast(`Erreur du modèle : ${(e as Error)?.message ?? e}`, 8000)
     }
     txt.classList.remove('typing')
     txt.textContent = reply

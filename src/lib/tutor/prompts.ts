@@ -25,7 +25,23 @@ export function tutorSystem(s: Scenario, level: Level): string {
 
 export function tutorMessages(s: Scenario, level: Level, history: ChatMsg[], maxTurns = 12): ChatMsg[] {
   // fenêtre glissante : les petits modèles ont un contexte limité
-  return [{ role: 'system', content: tutorSystem(s, level) }, ...history.slice(-maxTurns)]
+  return [{ role: 'system', content: tutorSystem(s, level) }, ...alternate(history.slice(-maxTurns))]
+}
+
+/**
+ * Certains modèles (Gemma) exigent : user, assistant, user, assistant…
+ * On fusionne les messages consécutifs du même rôle et on commence toujours par l'utilisateur.
+ */
+export function alternate(msgs: ChatMsg[]): ChatMsg[] {
+  const out: ChatMsg[] = []
+  for (const m of msgs) {
+    if (m.role === 'system') continue
+    const last = out[out.length - 1]
+    if (last && last.role === m.role) last.content += '\n' + m.content
+    else out.push({ ...m })
+  }
+  if (out[0]?.role === 'assistant') out.unshift({ role: 'user', content: "Hi! Let's start." })
+  return out
 }
 
 export interface Correction {
