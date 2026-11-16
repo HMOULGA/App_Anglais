@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { newCard, review, dueCards } from '../src/lib/srs'
 import { compareWords, fluency, normalize } from '../src/lib/tutor/analysis'
 import { parseJson } from '../src/lib/llm/engine'
-import { cleanReply } from '../src/screens/talk'
+import { cleanReply, looksGarbled } from '../src/screens/talk'
 import { initStore, update, streak, todayKey, getState } from '../src/lib/store'
 import { tutorMessages, correctionMessages } from '../src/lib/tutor/prompts'
 import { SCENARIOS } from '../src/lib/tutor/scenarios'
@@ -56,6 +56,10 @@ describe('sorties du modèle', () => {
   it('extrait un JSON entouré de texte', () => {
     expect(parseJson<{ ok: boolean }>('Sure! {"ok": true} hope it helps')).toEqual({ ok: true })
     expect(parseJson('pas de json')).toBeNull()
+  })
+  it('détecte une sortie incohérente', () => {
+    expect(looksGarbled('DirectDet Spy byt تلف bientôt desainiccation Dizจากการδοση Jason 回家 baleethaneнай使い')).toBe(true)
+    expect(looksGarbled("That's great! What did you do at the café afterwards?")).toBe(false)
   })
   it('nettoie les réponses du tuteur', () => {
     expect(cleanReply('Emma: "That sounds great! (smiles) What happened next?"')).toBe('That sounds great! What happened next?')

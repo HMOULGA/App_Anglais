@@ -17,6 +17,7 @@ export interface Settings {
   handsFree: boolean // écoute automatique après chaque réponse du tuteur
   dailyGoalMin: number
   correctionMode: 'every' | 'end' // corrections à chaque tour ou en fin de séance
+  gpu: boolean // accélération WebGPU (rapide mais instable sur certains téléphones)
 }
 
 export interface DayStat {
@@ -66,6 +67,7 @@ export function defaultSettings(isAndroid: boolean): Settings {
     handsFree: true,
     dailyGoalMin: 20,
     correctionMode: 'every',
+    gpu: false,
   }
 }
 

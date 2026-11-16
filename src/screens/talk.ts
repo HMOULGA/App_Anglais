@@ -184,6 +184,10 @@ function renderConvo(root: HTMLElement, sc: Scenario) {
       console.error(e)
       toast(`Erreur du modèle : ${(e as Error)?.message ?? e}`, 8000)
     }
+    if (looksGarbled(reply)) {
+      reply = "Sorry, something went wrong on my side. Could you repeat that?"
+      toast('Réponse illisible du modèle. Dans Réglages, désactivez l’accélération GPU ou choisissez un autre modèle.', 9000)
+    }
     txt.classList.remove('typing')
     txt.textContent = reply
     history.push({ role: 'assistant', content: reply })
@@ -206,7 +210,7 @@ function renderConvo(root: HTMLElement, sc: Scenario) {
     llm.chat(correctionMessages(t.said, t.context, st.level, st.explainInFrench), {
       jsonSchema: CORRECTION_SCHEMA, temperature: 0.1, maxTokens: 220, signal: ctrl.signal,
     })
-      .then((raw) => showCorrection(t, parseJson<Correction>(raw)))
+      .then((raw) => showCorrection(t, looksGarbled(raw) ? null : parseJson<Correction>(raw)))
       .catch(() => {
         if (ctrl.signal.aborted) { corrQueue.unshift(t); t.fix.innerHTML = '<span class="pending">Correction en attente…</span>' }
         else t.fix.innerHTML = '<span class="pending">Correction indisponible.</span>'
@@ -353,6 +357,14 @@ function renderConvo(root: HTMLElement, sc: Scenario) {
       })
     }
   }
+}
+
+/** Vrai si le texte contient beaucoup de caractères non latins : signe d'un calcul faussé (souvent le GPU). */
+export function looksGarbled(t: string): boolean {
+  const letters = t.replace(/[\s\d\p{P}\p{S}]/gu, '')
+  if (letters.length < 8) return false
+  const nonLatin = letters.replace(/[\p{Script=Latin}]/gu, '').length
+  return nonLatin / letters.length > 0.15
 }
 
 /** Retire ce que les petits modèles ajoutent parfois (nom du locuteur, guillemets, didascalies). */

@@ -37,7 +37,7 @@ export async function ensureLLM(): Promise<boolean> {
   try {
     await llm.load(src, (p, phase) =>
       ui.set(p, phase, info && phase.startsWith('Télé') ? `${Math.round(p * info.sizeMB)} / ${info.sizeMB} Mo` : ''),
-    )
+    { gpu: s.gpu })
     ui.close()
     return true
   } catch (e) {

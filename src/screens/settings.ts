@@ -33,6 +33,7 @@ export function render(root: HTMLElement) {
             <input type="url" class="custom-url" placeholder="https://huggingface.co/…/resolve/main/model-Q4_K_M.gguf" value="${esc(st.customModelUrl)}" style="width:100%;margin-top:6px;padding:.5rem;border-radius:8px;border:1px solid var(--line);background:var(--card)" /></div>
         </div>
         <div class="field"><label>Ou charger un fichier .gguf déjà présent sur l'appareil</label><input type="file" accept=".gguf" class="gguf" /></div>
+        <label class="switch"><span>Accélération GPU (WebGPU)<br><span class="small muted">Plus rapide, mais peut produire du texte incohérent sur certains appareils. Désactivez si les réponses sont du charabia.</span></span><input type="checkbox" data-k="gpu" ${st.gpu ? 'checked' : ''} /></label>
         <div class="row between"><span class="small muted">État : ${esc(llm.describe())} · ${multiThread ? 'multi-thread actif' : 'mono-thread'}</span>
           <button class="btn primary small" data-a="load">Télécharger / charger maintenant</button></div>
       </section>

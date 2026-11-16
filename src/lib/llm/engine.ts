@@ -14,7 +14,7 @@ export interface ChatOptions {
 export interface LLM {
   isReady(): boolean
   /** Charge le modèle (télécharge si absent du cache). progress ∈ [0,1] */
-  load(url: string | File, onProgress: (p: number, phase: string) => void): Promise<void>
+  load(url: string | File, onProgress: (p: number, phase: string) => void, opts?: { gpu: boolean }): Promise<void>
   chat(messages: ChatMsg[], opts?: ChatOptions): Promise<string>
   unload(): Promise<void>
   describe(): string
@@ -30,17 +30,18 @@ class WllamaLLM implements LLM {
   describe() {
     if (!this.w?.isModelLoaded()) return 'aucun modèle chargé'
     const t = this.w.getNumThreads?.() ?? 1
-    return `${t} thread${t > 1 ? 's' : ''}${this.w.isMultithread?.() ? '' : ' (mode mono-thread)'}`
+    return `${this.loadedUrl.endsWith('#gpu') ? 'GPU + ' : 'CPU, '}${t} thread${t > 1 ? 's' : ''}${this.w.isMultithread?.() ? '' : ' (mode mono-thread)'}`
   }
 
-  async load(src: string | File, onProgress: (p: number, phase: string) => void) {
-    const key = typeof src === 'string' ? src : `file:${src.name}:${src.size}`
+  async load(src: string | File, onProgress: (p: number, phase: string) => void, opts = { gpu: false }) {
+    const key = (typeof src === 'string' ? src : `file:${src.name}:${src.size}`) + (opts.gpu ? '#gpu' : '#cpu')
     if (this.isReady() && this.loadedUrl === key) return
     await this.unload()
     const { Wllama, LoggerWithoutDebug } = await import('@wllama/wllama')
     const wasm = (await import('@wllama/wllama/esm/wasm/wllama.wasm?url')).default
     this.w = new Wllama({ default: wasm }, { logger: LoggerWithoutDebug, allowOffline: true, parallelDownloads: 3 })
-    const params = { n_ctx: 4096, n_batch: 512 }
+    // WebGPU donne des résultats faux sur beaucoup de GPU mobiles : CPU par défaut, GPU sur option
+    const params = { n_ctx: 4096, n_batch: 512, n_gpu_layers: opts.gpu ? 999 : 0 }
     if (typeof src === 'string') {
       onProgress(0, 'Téléchargement du modèle')
       await this.w.loadModelFromUrl(src, {
