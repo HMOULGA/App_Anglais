@@ -16,7 +16,11 @@ L'IA tourne **entièrement sur l'appareil** : aucun compte, aucun abonnement, au
 
 La séance du jour sur l'accueil suit la méthode : révisions → 10–15 min de conversation → 5 min de shadowing.
 
-## Les moteurs d'IA
+## IA en ligne (Groq, recommandé)
+
+Collez une clé API Groq gratuite (console.groq.com › API Keys) dans **Réglages**. Le tuteur passe alors par Llama 3.3 70B (ou GPT-OSS 120B, Qwen 3 32B…) et l'écoute par Whisper large-v3 turbo : corrections bien plus fiables, réponses quasi instantanées. Sans réseau, quota épuisé ou clé refusée, l'appli repasse automatiquement sur l'IA locale ci-dessous. L'option **Mode privé** force l'IA locale.
+
+## Les moteurs d'IA locaux (secours / hors-ligne)
 
 | Fonction | Moteur | Détail |
 |---|---|---|

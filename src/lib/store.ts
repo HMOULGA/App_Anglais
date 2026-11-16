@@ -1,7 +1,7 @@
 // État persistant de l'application (localStorage). Tout reste sur l'appareil.
 import type { Card } from './srs'
 
-export type SttEngine = 'whisper' | 'native'
+export type SttEngine = 'whisper' | 'native' | 'cloud'
 export type Level = 'B1' | 'B2' | 'C1'
 
 export interface Settings {
@@ -18,6 +18,9 @@ export interface Settings {
   dailyGoalMin: number
   correctionMode: 'every' | 'end' // corrections à chaque tour ou en fin de séance
   gpu: boolean // accélération WebGPU (rapide mais instable sur certains téléphones)
+  groqKey: string // clé API Groq (stockée uniquement sur l'appareil)
+  groqModel: string
+  privateMode: boolean // force l'IA locale (rien n'est envoyé en ligne)
 }
 
 export interface DayStat {
@@ -68,6 +71,9 @@ export function defaultSettings(isAndroid: boolean): Settings {
     dailyGoalMin: 20,
     correctionMode: 'every',
     gpu: false,
+    groqKey: '',
+    groqModel: 'llama-3.3-70b-versatile',
+    privateMode: false,
   }
 }
 

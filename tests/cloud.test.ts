@@ -1,0 +1,77 @@
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
+import { initStore, update } from '../src/lib/store'
+import { cloudChat, cloudUsable, cloudStatus, encodeWav, cloudTranscribe, resetCloudPause } from '../src/lib/cloud'
+import { llm, NeedLocalError } from '../src/lib/llm/engine'
+
+function sse(chunks: string[]): Response {
+  const enc = new TextEncoder()
+  const body = new ReadableStream({
+    start(c) {
+      for (const t of chunks) c.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: t } }] })}\n\n`))
+      c.enqueue(enc.encode('data: [DONE]\n\n'))
+      c.close()
+    },
+  })
+  return new Response(body, { status: 200 })
+}
+
+describe('Groq', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    initStore(false)
+    update((s) => { s.settings.groqKey = 'gsk_test_key_123456' })
+    resetCloudPause()
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('actif seulement avec une clé et hors mode privé', () => {
+    expect(cloudUsable()).toBe(true)
+    update((s) => { s.settings.privateMode = true })
+    expect(cloudUsable()).toBe(false)
+    expect(cloudStatus()).toContain('mode privé')
+  })
+
+  it('lit un flux SSE en streaming', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sse(['Hello', ' there', '!']))
+    vi.stubGlobal('fetch', fetchMock)
+    const seen: string[] = []
+    const out = await cloudChat([{ role: 'user', content: 'hi' }], { onToken: (t) => seen.push(t) })
+    expect(out).toBe('Hello there!')
+    expect(seen).toEqual(['Hello', 'Hello there', 'Hello there!'])
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://api.groq.com/openai/v1/chat/completions')
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer gsk_test_key_123456')
+    expect(JSON.parse(init.body).model).toBe('llama-3.3-70b-versatile')
+  })
+
+  it('demande du JSON pour les corrections', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] })))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await cloudChat([{ role: 'user', content: 'x' }], { jsonSchema: {} })).toBe('{"ok":true}')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).response_format).toEqual({ type: 'json_object' })
+  })
+
+  it('quota atteint → pause du cloud et erreur NeedLocal si pas de modèle local', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"error":{"message":"rate"}}', { status: 429 })))
+    await expect(llm.chat([{ role: 'user', content: 'x' }])).rejects.toBeInstanceOf(NeedLocalError)
+    expect(cloudUsable()).toBe(false)
+    expect(cloudStatus()).toContain('quota')
+  })
+
+  it('envoie un WAV 16 kHz à Whisper', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: ' I go there yesterday. ' })))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await cloudTranscribe(new Float32Array(16000))).toBe('I go there yesterday.')
+    const form = fetchMock.mock.calls[0][1].body as FormData
+    expect(form.get('model')).toBe('whisper-large-v3-turbo')
+    expect(form.get('language')).toBe('en')
+  })
+
+  it('encode un WAV valide', () => {
+    const w = new DataView(encodeWav(new Float32Array([0, 1, -1]), 16000))
+    expect(String.fromCharCode(w.getUint8(0), w.getUint8(1), w.getUint8(2), w.getUint8(3))).toBe('RIFF')
+    expect(w.getUint32(24, true)).toBe(16000)
+    expect(w.getInt16(46, true)).toBe(32767)
+    expect(w.getInt16(48, true)).toBe(-32768)
+  })
+})

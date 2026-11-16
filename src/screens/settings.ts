@@ -5,6 +5,7 @@ import { listVoices, speak } from '../lib/speech/tts'
 import { setLocalModelFile, ensureLLM } from '../lib/ai'
 import { isAndroid, multiThread } from '../lib/platform'
 import { esc, on, toast } from '../lib/ui'
+import { GROQ_MODELS, cloudStatus, testCloud, resetCloudPause } from '../lib/cloud'
 
 export function render(root: HTMLElement) {
   let cached: string[] = []
@@ -17,7 +18,20 @@ export function render(root: HTMLElement) {
       <h1>Réglages</h1>
 
       <section class="card">
-        <h2>Tuteur IA (modèle local)</h2>
+        <h2>IA en ligne — Groq (recommandé)</h2>
+        <p class="small muted">Tuteur bien plus intelligent (modèles de 70 à 120 milliards de paramètres) et reconnaissance vocale Whisper large-v3, gratuitement dans la limite du quota quotidien. Vos phrases sont alors envoyées à Groq. Sans réseau ou quota épuisé, l'appli repasse automatiquement sur l'IA locale.</p>
+        <div class="field"><label>Clé API Groq</label>
+          <input type="password" class="groq-key" placeholder="gsk_…" value="${esc(st.groqKey)}" autocomplete="off" style="padding:.6rem;border-radius:10px;border:1px solid var(--line);background:var(--card)" />
+          <span class="small muted">Gratuite, sans carte bancaire : créez un compte sur <b>console.groq.com</b> › API Keys › Create API Key, puis collez-la ici. Elle reste sur cet appareil.</span></div>
+        <div class="field"><label>Modèle en ligne</label>
+          <select data-k="groqModel">${GROQ_MODELS.map((m) => `<option value="${m.id}" ${st.groqModel === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></div>
+        <label class="switch"><span>Mode privé (hors-ligne)<br><span class="small muted">N'utilise que l'IA locale ; rien n'est envoyé en ligne.</span></span><input type="checkbox" data-k="privateMode" ${st.privateMode ? 'checked' : ''} /></label>
+        <div class="row between" style="margin-top:8px"><span class="small muted cloud-status">État : ${esc(cloudStatus())}</span>
+          <button class="btn small" data-a="testcloud">Tester la clé</button></div>
+      </section>
+
+      <section class="card">
+        <h2>Tuteur IA (modèle local, de secours)</h2>
         <p class="small muted">Plus le modèle est gros, meilleures sont les corrections, mais plus il est lent. ${isAndroid ? 'Sur téléphone, Gemma 3 1B est un bon compromis.' : 'Sur PC, Qwen 2.5 3B est recommandé.'}</p>
         ${MODELS.map((m) => `
           <div class="model ${st.llmModel === m.id ? 'sel' : ''}" data-model="${m.id}">
@@ -40,11 +54,12 @@ export function render(root: HTMLElement) {
 
       <section class="card">
         <h2>Voix et écoute</h2>
-        ${isAndroid ? `<div class="field"><label>Reconnaissance vocale</label>
+        <div class="field"><label>Reconnaissance vocale</label>
           <select data-k="sttEngine">
-            <option value="native" ${st.sttEngine === 'native' ? 'selected' : ''}>Android (rapide ; installez le pack anglais hors-ligne)</option>
-            <option value="whisper" ${st.sttEngine === 'whisper' ? 'selected' : ''}>Whisper (100 % hors-ligne, plus lent)</option>
-          </select></div>` : ''}
+            <option value="cloud" ${st.sttEngine === 'cloud' ? 'selected' : ''}>Groq Whisper large-v3 (en ligne, le plus précis)</option>
+            ${isAndroid ? `<option value="native" ${st.sttEngine === 'native' ? 'selected' : ''}>Android (rapide ; installez le pack anglais hors-ligne)</option>` : ''}
+            <option value="whisper" ${st.sttEngine === 'whisper' ? 'selected' : ''}>Whisper local (100 % hors-ligne, plus lent)</option>
+          </select></div>
         <div class="field"><label>Modèle Whisper</label>
           <select data-k="whisperModel">${WHISPER_MODELS.map((w) => `<option value="${w.id}" ${st.whisperModel === w.id ? 'selected' : ''}>${esc(w.label)}</option>`).join('')}</select></div>
         <div class="field"><label>Accent</label>
@@ -102,6 +117,14 @@ export function render(root: HTMLElement) {
   })
   root.addEventListener('change', async (e) => {
     const t = e.target as HTMLInputElement
+    if (t.classList.contains('groq-key')) {
+      const first = !getState().settings.groqKey && t.value.trim()
+      set('groqKey', t.value.trim())
+      if (first) set('sttEngine', 'cloud') // première clé : on active aussi la transcription en ligne
+      resetCloudPause()
+      paint()
+      return
+    }
     if (t.classList.contains('custom-url')) { set('customModelUrl', t.value); set('llmModel', 'custom'); return }
     if (t.classList.contains('gguf') && t.files?.[0]) {
       setLocalModelFile(t.files[0])
@@ -116,6 +139,7 @@ export function render(root: HTMLElement) {
     if (!k) return
     const v = t.type === 'checkbox' ? t.checked : t.type === 'range' || t.type === 'number' ? Number(t.value) : t.value
     set(k, v as never)
+    if (k === 'privateMode' || k === 'groqModel') { resetCloudPause(); paint() }
   })
   root.addEventListener('input', (e) => {
     const t = e.target as HTMLInputElement
@@ -124,6 +148,12 @@ export function render(root: HTMLElement) {
   on(root, 'click', '[data-a]', async (el) => {
     const a = el.dataset.a
     const st = getState().settings
+    if (a === 'testcloud') {
+      const out = root.querySelector<HTMLElement>('.cloud-status')!
+      out.textContent = 'Test en cours…'
+      try { out.textContent = `✓ Groq répond : ${await testCloud()}` } catch (e) { out.textContent = `✗ ${(e as Error).message}` }
+      return
+    }
     if (a === 'load') { if (await ensureLLM()) { toast('Modèle prêt'); cached = await cachedModelUrls(); void paint() } }
     else if (a === 'testvoice') void speak("Hi! I'm Emma, your English partner. Let's practise together.", { rate: st.ttsRate, voice: st.voice, lang: st.accent })
     else if (a === 'export') {

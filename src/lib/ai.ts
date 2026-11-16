@@ -5,6 +5,7 @@ import { loadWhisper, whisperIsLoaded } from './speech/stt'
 import { getState } from './store'
 import { esc, modal } from './ui'
 import { isAndroid } from './platform'
+import { cloudUsable } from './cloud'
 
 let localFile: File | null = null
 export function setLocalModelFile(f: File | null) { localFile = f }
@@ -27,8 +28,9 @@ function progressModal(title: string) {
   }
 }
 
-/** Charge le modèle de langage choisi dans les réglages. Renvoie false en cas d'échec. */
-export async function ensureLLM(): Promise<boolean> {
+/** Prépare le tuteur : Groq si disponible, sinon charge le modèle local. Renvoie false en cas d'échec. */
+export async function ensureLLM(forceLocal = false): Promise<boolean> {
+  if (!forceLocal && cloudUsable()) return true
   const s = getState().settings
   const src: string | File = localFile ?? modelUrl(s.llmModel, s.customModelUrl)
   if (!src) { alertBox('Aucun modèle', 'Choisissez un modèle dans les Réglages.'); return false }
@@ -50,6 +52,7 @@ export async function ensureLLM(): Promise<boolean> {
 export async function ensureWhisper(): Promise<boolean> {
   const s = getState().settings
   if (s.sttEngine === 'native' && isAndroid) return true
+  if (s.sttEngine === 'cloud' && (cloudUsable() || isAndroid)) return true // Android : repli sur la reconnaissance native
   if (whisperIsLoaded(s.whisperModel)) return true
   const ui = progressModal('Préparation de la reconnaissance vocale')
   try {

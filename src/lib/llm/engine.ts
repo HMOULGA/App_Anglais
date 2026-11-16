@@ -1,5 +1,7 @@
 // Moteur de langage local. Implémentation réelle : wllama (llama.cpp en WebAssembly, dans un worker).
 import { isMock } from '../platform'
+import { cloudChat, cloudUsable, CloudError } from '../cloud'
+import { getState } from '../store'
 
 export interface ChatMsg { role: 'system' | 'user' | 'assistant'; content: string }
 
@@ -161,7 +163,34 @@ export async function removeCachedModel(url: string): Promise<void> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-export const llm: LLM = isMock ? new MockLLM() : new WllamaLLM()
+/** Le cloud a échoué et aucun modèle local n'est chargé : l'appelant doit charger l'IA locale. */
+export class NeedLocalError extends Error {
+  constructor(message: string) { super(message); this.name = 'NeedLocalError' }
+}
+
+/** Groq quand il est disponible, sinon le modèle local (repli automatique). */
+class HybridLLM implements LLM {
+  constructor(readonly local: LLM) {}
+  isReady() { return cloudUsable() || this.local.isReady() }
+  localReady() { return this.local.isReady() }
+  usingCloud() { return cloudUsable() }
+  load(src: string | File, onProgress: (p: number, phase: string) => void, opts?: { gpu: boolean }) { return this.local.load(src, onProgress, opts) }
+  unload() { return this.local.unload() }
+  describe() { return cloudUsable() ? `Groq · ${getState().settings.groqModel}` : this.local.describe() }
+  async chat(messages: ChatMsg[], opts: ChatOptions = {}) {
+    if (cloudUsable()) {
+      try { return await cloudChat(messages, opts) } catch (e) {
+        if ((e as Error).name === 'AbortError' || opts.signal?.aborted) throw e
+        if (!this.local.isReady()) throw new NeedLocalError((e as CloudError).message)
+        console.warn('Groq indisponible, repli local :', (e as Error).message)
+      }
+    }
+    if (!this.local.isReady()) throw new NeedLocalError('IA locale non chargée')
+    return this.local.chat(messages, opts)
+  }
+}
+
+export const llm = new HybridLLM(isMock ? new MockLLM() : new WllamaLLM())
 
 /** Extrait un objet JSON d'une sortie de modèle (tolère du texte autour). */
 export function parseJson<T>(raw: string): T | null {

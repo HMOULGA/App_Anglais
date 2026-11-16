@@ -2,7 +2,8 @@
 import { SpeechRecognition } from '@capacitor-community/speech-recognition'
 import { isAndroid, isMock } from '../platform'
 import { record } from './recorder'
-import type { SttEngine } from '../store'
+import { getState, type SttEngine } from '../store'
+import { cloudUsable, cloudTranscribe } from '../cloud'
 
 export interface SttResult { text: string; speechSec: number }
 
@@ -118,8 +119,28 @@ async function listenNative(o: ListenOptions): Promise<ListenHandle> {
   }
 }
 
+// ---------- Groq Whisper large-v3 (en ligne), repli sur Whisper local ----------
+async function listenCloud(o: ListenOptions): Promise<ListenHandle> {
+  const rec = await record({ autoStop: o.autoStop, onLevel: o.onLevel })
+  const result = rec.result.then(async (r) => {
+    if (!r.heardSpeech || r.samples.length < 16000 * 0.3) return { text: '', speechSec: 0 }
+    o.onTranscribing?.()
+    const copy = r.samples.slice()
+    try {
+      return { text: cleanTranscript(await cloudTranscribe(r.samples)), speechSec: r.speechSec }
+    } catch (e) {
+      console.warn('Transcription Groq impossible, repli Whisper local :', (e as Error).message)
+      await loadWhisper(getState().settings.whisperModel)
+      return { text: cleanTranscript(await transcribe(copy)), speechSec: r.speechSec }
+    }
+  })
+  return { stop: rec.stop, cancel: rec.cancel, result }
+}
+
 export function listen(o: ListenOptions): Promise<ListenHandle> {
-  return o.engine === 'native' && isAndroid ? listenNative(o) : listenWhisper(o)
+  if (o.engine === 'cloud' && cloudUsable()) return listenCloud(o)
+  if ((o.engine === 'native' || o.engine === 'cloud') && isAndroid) return listenNative(o)
+  return listenWhisper(o)
 }
 
 /** Nettoie les artefacts typiques de Whisper ([BLANK_AUDIO], (music), etc.). */

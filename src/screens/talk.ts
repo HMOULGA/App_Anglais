@@ -5,10 +5,10 @@ import {
   type Correction, type Summary, TUTOR_NAME,
 } from '../lib/tutor/prompts'
 import { fluency, normalize, compareWords } from '../lib/tutor/analysis'
-import { llm, parseJson, type ChatMsg } from '../lib/llm/engine'
+import { llm, parseJson, NeedLocalError, type ChatMsg } from '../lib/llm/engine'
 import { listen, type ListenHandle } from '../lib/speech/stt'
 import { speak, stopSpeaking } from '../lib/speech/tts'
-import { ensureAll } from '../lib/ai'
+import { ensureAll, ensureLLM } from '../lib/ai'
 import { getState, update, bumpToday } from '../lib/store'
 import { newCard } from '../lib/srs'
 import { esc, on, modal, navigate, toast } from '../lib/ui'
@@ -174,11 +174,20 @@ function renderConvo(root: HTMLElement, sc: Scenario) {
     const txt = bubble.querySelector('.txt')!
     txt.classList.add('typing')
     let reply = ''
+    const ask = () => llm.chat(tutorMessages(sc, st.level, history), {
+      maxTokens: 110, temperature: 0.8,
+      onToken: (t) => { txt.textContent = cleanReply(t); scrollDown() },
+    })
     try {
-      reply = cleanReply(await llm.chat(tutorMessages(sc, st.level, history), {
-        maxTokens: 110, temperature: 0.8,
-        onToken: (t) => { txt.textContent = cleanReply(t); scrollDown() },
-      }))
+      try {
+        reply = cleanReply(await ask())
+      } catch (e) {
+        if (!(e instanceof NeedLocalError)) throw e
+        // Groq indisponible (quota, réseau, clé) → on charge l'IA locale et on réessaie
+        toast(`${e.message} — passage à l'IA locale`, 6000)
+        if (!(await ensureLLM(true))) throw e
+        reply = cleanReply(await ask())
+      }
     } catch (e) {
       reply = "Sorry, I lost my train of thought. Could you say that again?"
       console.error(e)
@@ -213,7 +222,7 @@ function renderConvo(root: HTMLElement, sc: Scenario) {
       .then((raw) => showCorrection(t, looksGarbled(raw) ? null : parseJson<Correction>(raw)))
       .catch(() => {
         if (ctrl.signal.aborted) { corrQueue.unshift(t); t.fix.innerHTML = '<span class="pending">Correction en attente…</span>' }
-        else t.fix.innerHTML = '<span class="pending">Correction indisponible.</span>'
+        else t.fix.innerHTML = '<span class="pending">Correction indisponible pour cette phrase.</span>'
       })
       .finally(() => { corrRunning = null; pumpCorrections() })
   }
