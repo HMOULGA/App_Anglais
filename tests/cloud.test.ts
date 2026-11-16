@@ -119,4 +119,18 @@ describe('Groq', () => {
     await expect(cloudChat([{ role: 'user', content: 'x' }])).rejects.toThrow('Clé Gemini invalide')
     expect(cloudStatus()).toContain('clé refusée')
   })
+
+  it('Gemini : modèle saturé (503) → un autre modèle Gemini répond, le réglage ne change pas', async () => {
+    update((s) => { s.settings.cloudProvider = 'gemini'; s.settings.geminiKey = 'AIza_test_key_123456'; s.settings.geminiModel = 'gemini-3.8-flash' })
+    const busy = '{"error":{"message":"This model is currently experiencing high demand. Please try again later."}}'
+    const ok = JSON.stringify({ candidates: [{ content: { parts: [{ text: 'ready' }] } }] })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(busy, { status: 503 }))
+      .mockResolvedValueOnce(new Response(ok))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await cloudChat([{ role: 'user', content: 'x' }])).toBe('ready')
+    expect(fetchMock.mock.calls[1][0]).toContain('/models/gemini-flash-latest:')
+    expect(getState().settings.geminiModel).toBe('gemini-3.8-flash')
+    expect(cloudUsable()).toBe(true)
+  })
 })

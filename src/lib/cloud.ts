@@ -129,20 +129,42 @@ export function replacementModel(message: string): string | null {
   return message.match(/use\s+models\/([\w.-]+)/i)?.[1] ?? 'gemini-flash-latest'
 }
 
+/** Modèle saturé ou quota propre au modèle : un autre modèle Gemini peut répondre. */
+export function isOverloaded(e: unknown): boolean {
+  return e instanceof CloudError && (e.status === 503 || e.status === 500 || e.status === 429 || /high demand|overloaded|unavailable|try again later/i.test(e.message))
+}
+
 async function geminiChat(messages: ChatMsg[], opts: ChatOptions, retried = false): Promise<string> {
+  const model = getState().settings.geminiModel
   try {
-    return await geminiChatOnce(messages, opts)
+    return await geminiChatOnce(messages, opts, model)
   } catch (e) {
-    const next = e instanceof CloudError && !retried ? replacementModel(e.message) : null
-    if (!next || next === getState().settings.geminiModel) throw e
-    console.warn(`Modèle Gemini retiré, passage à ${next}`)
-    update((s) => { s.settings.geminiModel = next })
-    return geminiChat(messages, opts, true)
+    if (opts.signal?.aborted || !(e instanceof CloudError)) throw e
+    // 1) modèle retiré : on adopte définitivement le remplaçant indiqué par Google
+    const next = !retried ? replacementModel(e.message) : null
+    if (next && next !== model) {
+      console.warn(`Modèle Gemini retiré, passage à ${next}`)
+      update((s) => { s.settings.geminiModel = next })
+      return geminiChat(messages, opts, true)
+    }
+    // 2) modèle saturé : on essaie les autres modèles Gemini pour cette requête seulement
+    if (isOverloaded(e)) {
+      for (const alt of GEMINI_MODELS.map((m) => m.id).filter((id) => id !== model)) {
+        try {
+          const out = await geminiChatOnce(messages, opts, alt)
+          resetCloudPause()
+          return out
+        } catch (e2) {
+          if (opts.signal?.aborted || !isOverloaded(e2)) throw e2
+        }
+      }
+    }
+    throw e
   }
 }
 
-async function geminiChatOnce(messages: ChatMsg[], opts: ChatOptions): Promise<string> {
-  const s = getState().settings
+async function geminiChatOnce(messages: ChatMsg[], opts: ChatOptions, model: string): Promise<string> {
+  const s = { ...getState().settings, geminiModel: model }
   const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n')
   const contents = messages.filter((m) => m.role !== 'system').map((m) => ({
     role: m.role === 'assistant' ? 'model' : 'user',
